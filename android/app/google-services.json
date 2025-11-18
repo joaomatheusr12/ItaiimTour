@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "105543516618",
+    "project_id": "itaimtour-607f8",
+    "storage_bucket": "itaimtour-607f8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:105543516618:android:49432c3c86fbdf46830f33",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQAUV5KgipGTgPJbMy7WGJopdtAsXfxS0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
