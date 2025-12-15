@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/local_model.dart';
 
 class AvaliacaoPage extends StatefulWidget {
@@ -14,6 +16,83 @@ class _AvaliacaoPageState extends State<AvaliacaoPage> {
   double _avaliacao = 0;
   final TextEditingController _comentarioController = TextEditingController();
 
+  String _mascararEmail(String email) {
+    final partes = email.split('@');
+    if (partes.length != 2) return email;
+
+    final nome = partes[0];
+    final dominio = partes[1];
+
+    if (nome.length <= 2) {
+      return '${nome[0]}***@$dominio';
+    }
+
+    return '${nome.substring(0, 2)}***@$dominio';
+  }
+
+  Future<void> _enviarAvaliacao() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Você precisa estar logado para avaliar')),
+      );
+      return;
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final localRef = firestore.collection('locais').doc(widget.local.id);
+
+    await firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(localRef);
+
+      final int qntdAvAtual = snapshot['qntd_av'] ?? 0;
+      final int avTotalAtual = snapshot['av_total'] ?? 0;
+
+      final int novaQtd = qntdAvAtual + 1;
+      final int novoAvTotal = avTotalAtual + _avaliacao.toInt();
+      final double novaMedia = novoAvTotal / novaQtd;
+
+      // Atualiza o local
+      transaction.update(localRef, {
+        'qntd_av': novaQtd,
+        'av_total': novoAvTotal,
+        'avaliacao_media': novaMedia,
+      });
+
+      // Salva comentário
+      transaction.set(
+        firestore.collection('comentarios').doc(),
+        {
+          'id_local': widget.local.id,
+          'comentario': _comentarioController.text,
+          'usuario': _mascararEmail(user.email!),
+          'avaliacao': _avaliacao.toInt(),
+          'data': Timestamp.now(),
+        },
+      );
+    });
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Avaliação Enviada!"),
+        content: const Text("Obrigado por avaliar este local."),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,7 +106,7 @@ class _AvaliacaoPageState extends State<AvaliacaoPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Imagem do local
+            // Imagem
             Container(
               height: 250,
               width: double.infinity,
@@ -36,251 +115,117 @@ class _AvaliacaoPageState extends State<AvaliacaoPage> {
                 color: Colors.grey[200],
               ),
               child: widget.local.linkimg.isEmpty
-                  ? const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.photo_camera, size: 60, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text("Sem imagem", style: TextStyle(color: Colors.grey)),
-                      ],
-                    )
+                  ? const Center(child: Text("Sem imagem"))
                   : ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: Image.network(
                         widget.local.linkimg,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.error_outline, size: 60, color: Colors.red),
-                              SizedBox(height: 8),
-                              Text("Erro ao carregar imagem", style: TextStyle(color: Colors.red)),
-                            ],
-                          );
-                        },
                       ),
                     ),
             ),
-            
+
             const SizedBox(height: 24),
-            
-            // Nome do local
+
             Text(
               widget.local.nomeLocal,
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.blueGrey,
-              ),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
-            
+
             const SizedBox(height: 8),
-            
-            // Descrição
-            Text(
-              widget.local.descricao,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[700],
-                height: 1.4,
-              ),
-            ),
-            
+
+            Text(widget.local.descricao),
+
             const SizedBox(height: 24),
-            
-            // Avaliação com estrelas
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Text(
-                      "Avalie este local:",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Estrelas interativas
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(5, (index) {
-                        final starIndex = index + 1;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _avaliacao = starIndex.toDouble();
-                            });
-                          },
-                          child: Icon(
-                            starIndex <= _avaliacao
-                                ? Icons.star
-                                : Icons.star_border,
-                            size: 40,
-                            color: Colors.amber,
-                          ),
-                        );
-                      }),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    Text(
-                      _avaliacao == 0 
-                          ? "Toque nas estrelas para avaliar"
-                          : "Sua avaliação: $_avaliacao estrela${_avaliacao > 1 ? 's' : ''}",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: _avaliacao == 0 ? Colors.grey : Colors.blueGrey,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+
+            // Estrelas
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (index) {
+                final star = index + 1;
+                return GestureDetector(
+                  onTap: () => setState(() => _avaliacao = star.toDouble()),
+                  child: Icon(
+                    star <= _avaliacao ? Icons.star : Icons.star_border,
+                    size: 40,
+                    color: Colors.amber,
+                  ),
+                );
+              }),
+            ),
+
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: _comentarioController,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Digite seu comentário...',
+                border: OutlineInputBorder(),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
-            // Comentário
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Comentário (opcional):",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 12),
-                    
-                    TextField(
-                      controller: _comentarioController,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: "Digite seu comentário sobre este local...",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.all(16),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 32),
-            
-            // Botão de enviar avaliação
+
             SizedBox(
               width: double.infinity,
               height: 56,
               child: ElevatedButton(
-                onPressed: _avaliacao == 0 
-                    ? null
-                    : () {
-                        _enviarAvaliacao();
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[800],
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 3,
-                ),
-                child: const Text(
-                  "ENVIAR AVALIAÇÃO",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                onPressed: _avaliacao == 0 ? null : _enviarAvaliacao,
+                child: const Text("ENVIAR AVALIAÇÃO"),
               ),
             ),
-            
-            const SizedBox(height: 16),
-            
-            // Botão cancelar
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: OutlinedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  side: BorderSide(color: Colors.grey[400]!),
-                ),
-                child: const Text(
-                  "CANCELAR",
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
-                ),
-              ),
+
+            const SizedBox(height: 32),
+
+            const Text(
+              "Avaliações:",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('comentarios')
+                  .where('id_local', isEqualTo: widget.local.id)
+                  .orderBy('data', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const CircularProgressIndicator();
+                }
+
+                if (snapshot.data!.docs.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text("Nenhuma avaliação ainda."),
+                  );
+                }
+
+                return Column(
+                  children: snapshot.data!.docs.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return Card(
+                      child: ListTile(
+                        title: Text(data['usuario']),
+                        subtitle: Text(data['comentario']),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(
+                            data['avaliacao'],
+                            (_) => const Icon(Icons.star,
+                                size: 16, color: Colors.amber),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
             ),
           ],
         ),
       ),
     );
-  }
-
-  void _enviarAvaliacao() {
-    // Aqui você pode implementar a lógica para salvar no Firebase
-    // Por enquanto, vamos apenas mostrar um feedback e voltar
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Avaliação Enviada!"),
-        content: Text(
-          "Você avaliou ${widget.local.nomeLocal} com $_avaliacao estrela${_avaliacao > 1 ? 's' : ''}",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Fecha o dialog
-              Navigator.pop(context); // Volta para a página anterior
-            },
-            child: const Text("OK"),
-          ),
-        ],
-      ),
-    );
-    
-    // TODO: Implementar salvamento no Firebase
-    // FirebaseFirestore.instance.collection('avaliacoes').add({
-    //   'localId': widget.local.id,
-    //   'avaliacao': _avaliacao,
-    //   'comentario': _comentarioController.text,
-    //   'data': DateTime.now(),
-    // });
   }
 
   @override
